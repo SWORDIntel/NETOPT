@@ -89,7 +89,76 @@ cd NETOPT
 ./install
 ```
 
-The interactive installer will guide you through the process.
+The interactive installer wizard will guide you through the process.
+
+---
+
+### Installation Wizard (./install)
+
+The `./install` command provides an intelligent installation orchestrator that:
+
+1. **Detects your system** - OS, distribution, privileges, systemd availability
+2. **Checks prerequisites** - Validates required packages are installed
+3. **Recommends installer** - Suggests best method for your system
+4. **Provides menu** - 4 installation options to choose from
+5. **Executes installer** - Runs selected method with proper orchestration
+
+**Example output:**
+```
+╔══════════════════════════════════════════════════════════════════════════╗
+║            Network Optimization Toolkit - Installer                     ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+Detecting system configuration...
+
+System Information:
+  OS: Linux 6.16.9+deb14-amd64
+  Distribution: Debian GNU/Linux 12 (bookworm)
+  Architecture: x86_64
+  Hostname: your-hostname
+
+  Privileges: Sudo (passwordless)
+  systemd: Available (version 252)
+  systemd user mode: Available
+
+Checking prerequisites...
+✓ All prerequisites satisfied
+
+Recommended: Smart Installer (system-wide installation)
+
+Available Installation Methods:
+
+1. Smart Installer (Recommended)
+   - Interactive wizard with automatic detection
+   - Full features with systemd integration
+   - Comprehensive safety features
+   Script: installers/install-smart.sh
+
+2. Safe Installer (For Remote Sessions)
+   - 10-second delay before applying changes
+   - Prevents SSH disconnection
+   Script: installers/safe-install.sh
+
+3. Legacy Installer (Original Version)
+   - v1.0 compatible, basic functionality
+   Script: installers/install-network-optimize.sh
+
+4. Manual Run (No Installation)
+   - Run script directly when needed
+   Script: ./network-optimize.sh
+
+5. Exit
+
+Select installation method [1-5]:
+```
+
+**Quick Decision Guide:**
+- **Full features & automation?** → Choose **1** (Smart Installer)
+- **Installing via SSH?** → Choose **2** (Safe Installer - has 10s delay)
+- **Need v1.0 behavior?** → Choose **3** (Legacy Installer)
+- **Just testing?** → Choose **4** (Manual Run)
+
+---
 
 ### Prerequisites
 
@@ -97,14 +166,16 @@ The interactive installer will guide you through the process.
 - Linux kernel 4.9+ (for BBR congestion control and multipath routing)
 - `iproute2` package (for `ip` command)
 - `bash` 4.0+
-- Root or sudo privileges
+- Root or sudo privileges (for system installation)
 
 **Optional (enhanced features):**
 - `mtr` or `mtr-tiny` - BGP AS path tracing
 - `ethtool` - Interface capability detection
 - `iperf3` - Bandwidth testing
 - `tc` (traffic control) - Advanced QoS
-- `systemd` - Service management and auto-start
+- `systemd` 230+ - Service management and auto-start
+- `bats` - Running test suite
+- `jq` - JSON log parsing
 
 **Install dependencies:**
 ```bash
@@ -118,72 +189,118 @@ sudo dnf install iproute mtr ethtool iperf3 systemd
 sudo pacman -S iproute2 mtr ethtool iperf3 systemd
 ```
 
+---
+
 ### Installation Methods
 
-#### Method 1: Interactive Installer (Recommended)
+#### Method 1: Interactive Wizard (Recommended)
 
-Use the installation wizard that automatically detects your system and recommends the best method:
-
+**Single command:**
 ```bash
 ./install
 ```
 
-The wizard will:
-- Detect your system configuration (OS, privileges, systemd)
-- Recommend the appropriate installation method
-- Guide you through the installation process
-- Verify the installation completed successfully
+The wizard orchestrates the entire installation:
+- ✅ Detects system configuration automatically
+- ✅ Validates prerequisites before proceeding
+- ✅ Recommends best installation method
+- ✅ Provides menu of 4 installation options
+- ✅ Executes selected installer
+- ✅ Verifies installation success
 
-Or run the smart installer directly:
+**Available installers:**
 
-```bash
-./installers/install-smart.sh
-```
-
-**Interactive wizard provides:**
-- Automatic mode detection (root/user/portable)
+**Smart Installer** (installers/install-smart.sh)
+- Full-featured with automatic detection
+- 3 installation modes (system/user/portable)
 - Dependency installation
-- Service configuration
-- Initial checkpoint creation
+- Enhanced systemd service
+- Checkpoint creation
 - Detailed installation report
 
-**Installation locations:**
-- **System (root):** `/opt/netopt`, `/etc/netopt`, `/usr/local/bin/netopt`
-- **User (systemd):** `~/.local/share/netopt`, `~/.config/netopt`, `~/.local/bin/netopt`
-- **Portable:** `~/.netopt`
+**Safe Installer** (installers/safe-install.sh)
+- Designed for SSH/remote sessions
+- 10-second delay prevents disconnection
+- Uses proven legacy services
+- Simple and reliable
 
-#### Method 2: Manual Installation
+**Legacy Installer** (installers/install-network-optimize.sh)
+- Original v1.0 installation method
+- System-wide only
+- Basic features
+- Backward compatible
+
+**Installation locations by mode:**
+
+| Mode | Install Dir | Config Dir | Command | Service |
+|------|-------------|------------|---------|---------|
+| **System** | `/opt/netopt` | `/etc/netopt` | `/usr/local/bin/netopt` | System service |
+| **User** | `~/.local/share/netopt` | `~/.config/netopt` | `~/.local/bin/netopt` | User service |
+| **Portable** | `~/.netopt` | `~/.netopt/config` | `~/.netopt/bin/netopt` | None |
+
+#### Method 2: Direct Installer Execution
+
+Skip the wizard and run an installer directly:
+
+```bash
+# Smart installer (recommended)
+./installers/install-smart.sh
+
+# Safe installer (for SSH)
+./installers/safe-install.sh
+
+# Legacy installer (v1.0)
+sudo ./installers/install-network-optimize.sh
+```
+
+#### Method 3: Manual Installation
+
+For custom setups or advanced users:
 
 ```bash
 # Create directories
 sudo mkdir -p /opt/netopt/{lib,config,logs,checkpoints}
+sudo mkdir -p /etc/netopt
 
-# Copy files
+# Copy library files
 sudo cp -r lib/* /opt/netopt/lib/
+
+# Copy configuration
 sudo cp config/netopt.conf /etc/netopt/
+sudo cp config/bgp-targets.conf /etc/netopt/
+
+# Copy main script
 sudo cp network-optimize.sh /opt/netopt/netopt.sh
 sudo chmod +x /opt/netopt/netopt.sh
 
-# Create symlink
+# Create command symlink
 sudo ln -s /opt/netopt/netopt.sh /usr/local/bin/netopt
 
-# Install systemd service
-sudo cp systemd/netopt-verbose.service /etc/systemd/system/netopt.service
+# Install systemd service (choose enhanced or verbose)
+sudo cp installers/systemd/netopt-verbose.service /etc/systemd/system/netopt.service
 sudo systemctl daemon-reload
 sudo systemctl enable netopt.service
 ```
 
-#### Method 3: Development Mode
+#### Method 4: Development/Testing Mode
 
-Run directly from source without installation:
+Run directly from source without any installation:
 
 ```bash
-# Set environment for local execution
-export NETOPT_ROOT=/home/john/Downloads/NETOPT
+# Clone repository
+git clone https://github.com/SWORDIntel/NETOPT.git
+cd NETOPT
+
+# Set development environment
+export NETOPT_ROOT=$(pwd)
 export NETOPT_LOG_LEVEL=DEBUG
 
 # Run directly
 sudo ./network-optimize.sh
+
+# Or test specific features
+source lib/network/bgp-intelligence.sh
+trace_as_path 8.8.8.8
 ```
 
 ---
@@ -1119,20 +1236,29 @@ SOFTWARE.
 
 ### Common Questions
 
+**Q: How do I install NETOPT?**
+A: Simply run `./install` and select option 1 (Smart Installer). The wizard handles everything automatically.
+
 **Q: Does NETOPT work with VPNs?**
 A: Yes, VPN interfaces (tun*, wg*) are detected and can be included in optimization.
 
 **Q: Can I exclude specific interfaces?**
-A: Yes, configure `EXCLUDE_INTERFACES` regex pattern in config file.
+A: Yes, configure `EXCLUDE_INTERFACES` regex pattern in `/etc/netopt/netopt.conf`.
 
 **Q: Does this work with Docker?**
-A: Docker interfaces are excluded by default to prevent conflicts.
+A: Docker interfaces are excluded by default to prevent conflicts. This is configurable.
 
 **Q: What if all connections fail?**
-A: Automatic rollback to previous configuration preserves connectivity.
+A: Automatic rollback to previous configuration preserves connectivity. Checkpoints provide additional safety.
 
 **Q: Can I run this without systemd?**
-A: Yes, use portable mode or run script directly.
+A: Yes, use portable mode (./install → option 1 → custom → portable) or run script directly.
+
+**Q: Can I install without root privileges?**
+A: Yes! Use the Smart Installer in user mode. It will install to `~/.local/` and create a user-level systemd service.
+
+**Q: Is it safe to install via SSH?**
+A: Yes, use the Safe Installer (./install → option 2) which has a 10-second delay, or use the watchdog feature in Smart Installer.
 
 ### Performance Tuning
 
