@@ -1,0 +1,16 @@
+[Unit]
+Description=Periodic Network Re-optimization Timer
+Requires=network-optimize-periodic.service
+
+[Timer]
+# Run 5 minutes after boot
+OnBootSec=5min
+
+# Then run every 5 minutes
+OnUnitActiveSec=5min
+
+# Keep timer persistent across reboots
+Persistent=true
+
+[Install]
+WantedBy=timers.target

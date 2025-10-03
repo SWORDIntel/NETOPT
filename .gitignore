@@ -1,0 +1,71 @@
+# NETOPT .gitignore
+
+# Runtime state files
+*.lock
+*.pid
+state/
+checkpoints/
+*.backup
+
+# Log files
+logs/
+*.log
+*.log.*
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Cache directories
+cache/
+.cache/
+
+# System-specific
+/var/
+/opt/
+/etc/netopt/
+
+# User-specific
+.local/
+.config/netopt/
+.netopt/
+
+# Test artifacts
+test-results/
+coverage/
+*.test
+*.bats.log
+
+# Build artifacts
+*.tar.gz
+*.zip
+dist/
+
+# Editor files
+*.swp
+*.swo
+*~
+.*.sw?
+.vscode/
+.idea/
+*.sublime-*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Backup files
+*~
+*.bak
+*.backup-*
+
+# Development
+scratch/
+dev-notes/
+
+# Installation reports
+/tmp/netopt-install-report-*.txt
+/tmp/netopt-state-*.txt
+/tmp/netopt-benchmark-*.log

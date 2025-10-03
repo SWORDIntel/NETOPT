@@ -1,0 +1,82 @@
+[Unit]
+Description=NETOPT Enhanced Network Optimization Service
+Documentation=man:netopt(8) file:///opt/netopt/docs/INSTALLATION.md
+After=network-online.target systemd-networkd.service NetworkManager.service
+Wants=network-online.target
+ConditionPathExists=/opt/netopt/netopt.sh
+ConditionPathExists=/etc/netopt/netopt.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Environment
+Environment="NETOPT_MODE=service"
+Environment="NETOPT_SAFETY=enabled"
+EnvironmentFile=-/etc/netopt/netopt.conf
+
+# Pre-flight health checks
+ExecStartPre=/bin/bash -c 'echo "[NETOPT] Starting pre-flight checks..."'
+ExecStartPre=/bin/bash -c 'if ! ip link show | grep -q "state UP"; then echo "[ERROR] No active network interfaces"; exit 1; fi'
+ExecStartPre=/bin/bash -c 'if ! ping -c 1 -W 2 $(ip route | grep "^default" | head -1 | awk "{print \$3}") >/dev/null 2>&1; then echo "[WARNING] Cannot reach gateway"; fi'
+ExecStartPre=/bin/bash -c 'echo "[NETOPT] Pre-flight checks complete"'
+
+# Create checkpoint before applying changes
+ExecStartPre=/bin/bash -c 'if [ -f /opt/netopt/lib/safety/checkpoint.sh ]; then /opt/netopt/lib/safety/checkpoint.sh create service_start "Pre-service checkpoint"; fi'
+
+# Main execution
+ExecStart=/opt/netopt/netopt.sh --apply --safe
+
+# Post-execution validation
+ExecStartPost=/bin/bash -c 'echo "[NETOPT] Running post-execution validation..."'
+ExecStartPost=/bin/bash -c 'sleep 2'
+ExecStartPost=/bin/bash -c 'if ! ping -c 3 -W 2 $(ip route | grep "^default" | head -1 | awk "{print \$3}") >/dev/null 2>&1; then echo "[ERROR] Network validation failed"; exit 1; fi'
+ExecStartPost=/bin/bash -c 'echo "[NETOPT] Validation complete - optimizations applied successfully"'
+
+# Restore on stop
+ExecStop=/opt/netopt/netopt.sh --restore
+
+# Service health monitoring
+ExecReload=/bin/bash -c 'echo "[NETOPT] Reloading configuration..."'
+ExecReload=/opt/netopt/netopt.sh --apply --safe
+
+# Resource limits
+CPUQuota=20%
+MemoryLimit=128M
+TasksMax=10
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/netopt /opt/netopt/logs /opt/netopt/checkpoints
+PrivateTmp=yes
+NoNewPrivileges=false
+ProtectKernelTunables=false
+ProtectKernelModules=true
+ProtectControlGroups=false
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+# Capabilities (required for network modifications)
+AmbientCapabilities=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_NET_RAW
+
+# Failure handling
+Restart=on-failure
+RestartSec=30s
+StartLimitBurst=3
+StartLimitIntervalSec=300
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netopt
+
+# Watchdog integration
+WatchdogSec=180s
+NotifyAccess=none
+
+[Install]
+WantedBy=multi-user.target
+Also=netopt-watchdog.service

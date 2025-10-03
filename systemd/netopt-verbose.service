@@ -1,0 +1,233 @@
+[Unit]
+Description=NETOPT Network Optimization Service (Verbose Logging)
+Documentation=file:///opt/netopt/docs/INSTALLATION.md
+After=network-online.target systemd-networkd.service NetworkManager.service
+Wants=network-online.target
+ConditionPathExists=/opt/netopt/netopt.sh
+ConditionPathExists=/etc/netopt/netopt.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Environment with verbose logging
+Environment="NETOPT_MODE=service"
+Environment="NETOPT_SAFETY=enabled"
+Environment="NETOPT_LOG_LEVEL=DEBUG"
+Environment="NETOPT_VERBOSE=1"
+EnvironmentFile=-/etc/netopt/netopt.conf
+
+#==============================================================================
+# PRE-FLIGHT VALIDATION PHASE
+#==============================================================================
+
+ExecStartPre=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && log_service_start'
+ExecStartPre=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && log_preflight_start'
+
+# Check 1: Network interfaces available
+ExecStartPre=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    if ip link show | grep -q "state UP"; then \
+        count=$(ip -br link show | grep -c "UP"); \
+        log_preflight_check "Network Interfaces" "pass" "$count interfaces UP"; \
+    else \
+        log_preflight_check "Network Interfaces" "fail" "No UP interfaces"; \
+        exit 1; \
+    fi'
+
+# Check 2: Default gateway reachable
+ExecStartPre=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    gateway=$(ip route | grep "^default" | head -1 | awk "{print \\$3}"); \
+    if ping -c 1 -W 2 $gateway >/dev/null 2>&1; then \
+        log_preflight_check "Gateway Connectivity" "pass" "$gateway reachable"; \
+    else \
+        log_preflight_check "Gateway Connectivity" "warn" "$gateway unreachable"; \
+    fi'
+
+# Check 3: Required commands available
+ExecStartPre=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    for cmd in ip ping sysctl; do \
+        if command -v $cmd >/dev/null 2>&1; then \
+            log_preflight_check "Command: $cmd" "pass" "$(command -v $cmd)"; \
+        else \
+            log_preflight_check "Command: $cmd" "fail" "not found"; \
+            exit 1; \
+        fi; \
+    done'
+
+# Check 4: Configuration file valid
+ExecStartPre=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    if [[ -f /etc/netopt/netopt.conf ]]; then \
+        log_preflight_check "Configuration File" "pass" "/etc/netopt/netopt.conf"; \
+    else \
+        log_preflight_check "Configuration File" "warn" "not found, using defaults"; \
+    fi'
+
+# Capture before state
+ExecStartPre=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && log_network_state "BEFORE"'
+
+# Create checkpoint
+ExecStartPre=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    log_info "Creating pre-optimization checkpoint..." && \
+    if [[ -f /opt/netopt/lib/safety/checkpoint.sh ]]; then \
+        source /opt/netopt/lib/safety/checkpoint.sh && \
+        checkpoint_name=$(create_checkpoint "service_$(date +%Y%m%d_%H%M%S)" "Pre-service checkpoint") && \
+        log_checkpoint_created "service checkpoint" "$checkpoint_name"; \
+    else \
+        log_warn "Checkpoint system not available, skipping"; \
+    fi'
+
+ExecStartPre=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && log_preflight_complete 4 0'
+
+#==============================================================================
+# MAIN OPTIMIZATION PHASE
+#==============================================================================
+
+ExecStartPre=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && log_optimization_phase "Network Optimization"'
+
+# Main execution with integrated logging
+ExecStart=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    start_time=$(date +%%s) && \
+    log_info "Executing network optimization..." && \
+    /opt/netopt/netopt.sh --apply 2>&1 | while IFS= read -r line; do \
+        if echo "$line" | grep -q "Testing:"; then \
+            log_info "$line"; \
+        elif echo "$line" | grep -q "ALIVE\\|DEAD"; then \
+            log_info "$line"; \
+        elif echo "$line" | grep -q "Creating\\|Applying\\|enabled"; then \
+            log_info "$line"; \
+        elif echo "$line" | grep -q "ERROR\\|Failed"; then \
+            log_error "$line"; \
+        elif echo "$line" | grep -q "WARNING\\|WARN"; then \
+            log_warn "$line"; \
+        else \
+            log_debug "$line"; \
+        fi; \
+    done && \
+    end_time=$(date +%%s) && \
+    duration=$((end_time - start_time)) && \
+    log_timing "Network optimization" "$start_time" "$end_time" && \
+    log_performance_metric "optimization_duration" "$duration" "s"'
+
+#==============================================================================
+# POST-VALIDATION PHASE
+#==============================================================================
+
+ExecStartPost=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && log_validation_start'
+
+# Wait for routes to stabilize
+ExecStartPost=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    log_info "Waiting 3 seconds for route stabilization..." && sleep 3'
+
+# Validation 1: Check if multipath route exists
+ExecStartPost=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    if ip route show default | grep -q "nexthop"; then \
+        nexthop_count=$(ip route show default | grep -o "nexthop" | wc -l); \
+        log_validation_result "Multipath Route" "true" "$nexthop_count nexthops"; \
+    else \
+        log_validation_result "Multipath Route" "false" "single path only"; \
+    fi'
+
+# Validation 2: Test gateway connectivity
+ExecStartPost=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    gateway=$(ip route | grep "^default" | head -1 | awk "{print \\$3}"); \
+    if ping -c 3 -W 2 $gateway >/dev/null 2>&1; then \
+        log_validation_result "Gateway Connectivity" "true" "$gateway responds to ping"; \
+    else \
+        log_validation_result "Gateway Connectivity" "false" "$gateway not responding"; \
+        log_error "Network validation failed, initiating rollback..."; \
+        /opt/netopt/netopt.sh --restore; \
+        exit 1; \
+    fi'
+
+# Validation 3: Test internet connectivity
+ExecStartPost=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    if ping -c 2 -W 3 8.8.8.8 >/dev/null 2>&1; then \
+        log_validation_result "Internet Connectivity" "true" "8.8.8.8 reachable"; \
+    else \
+        log_validation_result "Internet Connectivity" "false" "cannot reach internet"; \
+    fi'
+
+# Validation 4: DNS resolution test
+ExecStartPost=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    if host google.com >/dev/null 2>&1 || nslookup google.com >/dev/null 2>&1; then \
+        log_validation_result "DNS Resolution" "true" "DNS working"; \
+    else \
+        log_validation_result "DNS Resolution" "false" "DNS not working"; \
+    fi'
+
+# Capture after state
+ExecStartPost=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && log_network_state "AFTER"'
+
+# Final summary
+ExecStartPost=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    log_separator "=" && \
+    log_info "NETOPT Service Started Successfully" && \
+    log_info "Active connections optimized and validated" && \
+    log_separator "=" && \
+    log_event_json "service" "start" "success" "phase=complete"'
+
+#==============================================================================
+# STOP/RESTORE PHASE
+#==============================================================================
+
+ExecStop=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    log_service_stop && \
+    log_info "Restoring previous network configuration..." && \
+    /opt/netopt/netopt.sh --restore && \
+    log_info "✓ Network configuration restored"'
+
+#==============================================================================
+# RELOAD/REOPTIMIZE PHASE
+#==============================================================================
+
+ExecReload=/bin/bash -c 'source /opt/netopt/lib/network/service-logger.sh && \
+    log_section "Reloading Configuration" && \
+    log_info "Re-running optimization with new settings..." && \
+    /opt/netopt/netopt.sh --apply'
+
+#==============================================================================
+# SERVICE CONFIGURATION
+#==============================================================================
+
+# Resource limits (prevent runaway)
+CPUQuota=20%
+MemoryLimit=128M
+TasksMax=10
+
+# Failure handling
+Restart=on-failure
+RestartSec=30s
+StartLimitBurst=3
+StartLimitIntervalSec=300
+
+# Logging configuration
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netopt
+SyslogLevel=info
+
+# Watchdog (service must complete within 180s)
+WatchdogSec=180s
+TimeoutStartSec=180s
+TimeoutStopSec=30s
+
+# Security (minimal for network manipulation)
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/netopt /opt/netopt/logs /opt/netopt/checkpoints /var/log/netopt
+PrivateTmp=yes
+NoNewPrivileges=false
+ProtectKernelTunables=false
+ProtectKernelModules=true
+ProtectControlGroups=false
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+# Required capabilities
+AmbientCapabilities=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target
+Also=netopt-watchdog.timer
