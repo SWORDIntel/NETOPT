@@ -57,13 +57,14 @@
 
 ```bash
 # Clone or download NETOPT
-cd /home/john/Downloads/NETOPT
+git clone https://github.com/SWORDIntel/NETOPT.git
+cd NETOPT
 
-# Option 1: Quick test (no installation)
+# Option 1: Use installation wizard (recommended)
+./install
+
+# Option 2: Quick test (no installation)
 sudo ./network-optimize.sh
-
-# Option 2: Smart installation with interactive wizard
-sudo ./install-smart.sh
 
 # Option 3: View capabilities demo
 ./demo-enhanced-logging.sh
@@ -79,6 +80,16 @@ sudo ./install-smart.sh
 ---
 
 ## 📦 Installation
+
+### TL;DR - Quick Install
+
+```bash
+git clone https://github.com/SWORDIntel/NETOPT.git
+cd NETOPT
+./install
+```
+
+The interactive installer will guide you through the process.
 
 ### Prerequisites
 
@@ -109,12 +120,24 @@ sudo pacman -S iproute2 mtr ethtool iperf3 systemd
 
 ### Installation Methods
 
-#### Method 1: Smart Installation (Recommended)
+#### Method 1: Interactive Installer (Recommended)
 
-Automatically detects privileges and installs to the appropriate location:
+Use the installation wizard that automatically detects your system and recommends the best method:
 
 ```bash
-sudo ./install-smart.sh
+./install
+```
+
+The wizard will:
+- Detect your system configuration (OS, privileges, systemd)
+- Recommend the appropriate installation method
+- Guide you through the installation process
+- Verify the installation completed successfully
+
+Or run the smart installer directly:
+
+```bash
+./installers/install-smart.sh
 ```
 
 **Interactive wizard provides:**

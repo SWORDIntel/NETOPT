@@ -273,9 +273,11 @@ run_installation() {
     echo -e "${BLUE}Starting installation...${NC}"
     echo ""
 
-    # Source and run the smart installer
-    if [[ -f "$SCRIPT_DIR/lib/installer/smart-install.sh" ]]; then
-        source "$SCRIPT_DIR/lib/installer/smart-install.sh"
+    # Source and run the smart installer library
+    # Note: We're in installers/ so parent dir is NETOPT root
+    local lib_path="$(dirname "$SCRIPT_DIR")/lib/installer/smart-install.sh"
+    if [[ -f "$lib_path" ]]; then
+        source "$lib_path"
 
         # Override main function call - we'll call components directly
         detect_privileges

@@ -35,7 +35,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Run the main installer
+# Run the main installer (in same directory)
 bash "$SCRIPT_DIR/install-network-optimize.sh"
 
 echo ""

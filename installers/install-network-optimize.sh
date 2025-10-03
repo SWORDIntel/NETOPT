@@ -7,20 +7,21 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NETOPT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 echo "=== Installing Network Optimization Service ==="
 
 # 1. Copy main script to system location
 echo "Installing main script..."
-cp "$SCRIPT_DIR/network-optimize.sh" /usr/local/bin/network-optimize.sh
+cp "$NETOPT_ROOT/network-optimize.sh" /usr/local/bin/network-optimize.sh
 chmod +x /usr/local/bin/network-optimize.sh
 echo "  ✓ Script installed to /usr/local/bin/network-optimize.sh"
 
-# 2. Install systemd service files
+# 2. Install systemd service files (from legacy directory)
 echo "Installing systemd services..."
-cp "$SCRIPT_DIR/network-optimize.service" /etc/systemd/system/
-cp "$SCRIPT_DIR/network-optimize-periodic.service" /etc/systemd/system/
-cp "$SCRIPT_DIR/network-optimize.timer" /etc/systemd/system/
+cp "$SCRIPT_DIR/legacy/network-optimize.service" /etc/systemd/system/
+cp "$SCRIPT_DIR/legacy/network-optimize-periodic.service" /etc/systemd/system/
+cp "$SCRIPT_DIR/legacy/network-optimize.timer" /etc/systemd/system/
 echo "  ✓ Systemd files installed"
 
 # 3. Reload systemd

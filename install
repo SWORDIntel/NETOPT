@@ -1,0 +1,320 @@
+#!/bin/bash
+################################################################################
+# NETOPT Installation Orchestrator
+# Simple wrapper that selects and executes the appropriate installer
+################################################################################
+
+set -euo pipefail
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALLERS_DIR="$SCRIPT_DIR/installers"
+
+# Color codes
+readonly GREEN='\033[0;32m'
+readonly BLUE='\033[0;34m'
+readonly YELLOW='\033[1;33m'
+readonly RED='\033[0;31m'
+readonly BOLD='\033[1m'
+readonly NC='\033[0m'
+
+################################################################################
+# Display Banner
+################################################################################
+
+show_banner() {
+    cat <<'EOF'
+╔══════════════════════════════════════════════════════════════════════════╗
+║                                                                          ║
+║    _   ____________  __________                                         ║
+║   / | / / ____/_  __/ __ / __ \/_  __/                                  ║
+║  /  |/ / __/   / / / / / / /_/ / / /                                    ║
+║ / /|  / /___  / / / /_/ / ____/ / /                                     ║
+║/_/ |_/_____/ /_/  \____/_/     /_/                                      ║
+║                                                                          ║
+║            Network Optimization Toolkit - Installer                     ║
+║                                                                          ║
+╚══════════════════════════════════════════════════════════════════════════╝
+EOF
+    echo ""
+}
+
+################################################################################
+# System Detection
+################################################################################
+
+detect_system() {
+    echo -e "${BLUE}Detecting system configuration...${NC}"
+    echo ""
+
+    # OS Information
+    echo "System Information:"
+    echo "  OS: $(uname -s) $(uname -r)"
+    echo "  Distribution: $(lsb_release -d 2>/dev/null | cut -f2 || cat /etc/os-release 2>/dev/null | grep "^PRETTY_NAME" | cut -d'"' -f2 || echo "Unknown")"
+    echo "  Architecture: $(uname -m)"
+    echo "  Hostname: $(hostname)"
+    echo ""
+
+    # Privilege Detection
+    if [[ $EUID -eq 0 ]]; then
+        echo -e "  Privileges: ${GREEN}Root${NC}"
+        PRIVILEGE_MODE="root"
+    elif sudo -n true 2>/dev/null; then
+        echo -e "  Privileges: ${GREEN}Sudo (passwordless)${NC}"
+        PRIVILEGE_MODE="sudo"
+    elif groups | grep -qw sudo 2>/dev/null || groups | grep -qw wheel 2>/dev/null; then
+        echo -e "  Privileges: ${YELLOW}Sudo (requires password)${NC}"
+        PRIVILEGE_MODE="sudo-password"
+    else
+        echo -e "  Privileges: ${YELLOW}User (no sudo)${NC}"
+        PRIVILEGE_MODE="user"
+    fi
+    echo ""
+
+    # systemd Detection
+    if systemctl --version >/dev/null 2>&1; then
+        echo -e "  systemd: ${GREEN}Available${NC} (version $(systemctl --version | head -1 | awk '{print $2}'))"
+        SYSTEMD_AVAILABLE=true
+    else
+        echo -e "  systemd: ${RED}Not available${NC}"
+        SYSTEMD_AVAILABLE=false
+    fi
+
+    # systemd user mode
+    if systemctl --user status >/dev/null 2>&1; then
+        echo -e "  systemd user mode: ${GREEN}Available${NC}"
+        SYSTEMD_USER_AVAILABLE=true
+    else
+        echo -e "  systemd user mode: ${YELLOW}Not available${NC}"
+        SYSTEMD_USER_AVAILABLE=false
+    fi
+    echo ""
+}
+
+################################################################################
+# Installer Selection
+################################################################################
+
+recommend_installer() {
+    local recommended=""
+
+    case "$PRIVILEGE_MODE" in
+        root|sudo)
+            recommended="smart"
+            echo -e "${BOLD}Recommended:${NC} Smart Installer (system-wide installation)"
+            echo "  - Full features with systemd integration"
+            echo "  - Automatic privilege detection"
+            echo "  - Comprehensive safety features"
+            echo "  - Detailed installation reports"
+            ;;
+        sudo-password)
+            recommended="smart"
+            echo -e "${BOLD}Recommended:${NC} Smart Installer (will prompt for password)"
+            echo "  - Full features with systemd integration"
+            echo "  - Requires sudo password during installation"
+            ;;
+        user)
+            if [[ "$SYSTEMD_USER_AVAILABLE" == "true" ]]; then
+                recommended="smart"
+                echo -e "${BOLD}Recommended:${NC} Smart Installer (user-mode installation)"
+                echo "  - User-level systemd service"
+                echo "  - No root privileges required"
+                echo "  - Limited to user account"
+            else
+                recommended="manual"
+                echo -e "${BOLD}Recommended:${NC} Manual run (portable mode)"
+                echo "  - Run script directly when needed"
+                echo "  - No system integration"
+            fi
+            ;;
+    esac
+
+    echo "$recommended"
+}
+
+show_installer_menu() {
+    echo -e "${BOLD}Available Installation Methods:${NC}"
+    echo ""
+    echo "1. ${GREEN}Smart Installer${NC} (Recommended)"
+    echo "   - Interactive wizard with automatic detection"
+    echo "   - Handles dependencies and configuration"
+    echo "   - Creates systemd service (if available)"
+    echo "   - Full safety features (checkpoints, watchdog)"
+    echo "   - Detailed installation report"
+    echo "   Script: installers/install-smart.sh"
+    echo ""
+
+    echo "2. ${YELLOW}Safe Installer${NC} (For Remote Sessions)"
+    echo "   - 10-second delay before applying changes"
+    echo "   - Prevents SSH disconnection"
+    echo "   - Basic systemd integration"
+    echo "   - Legacy compatibility"
+    echo "   Script: installers/safe-install.sh"
+    echo ""
+
+    echo "3. ${YELLOW}Legacy Installer${NC} (Original Version)"
+    echo "   - Original installation method"
+    echo "   - System-wide installation only"
+    echo "   - Basic functionality"
+    echo "   - Requires root access"
+    echo "   Script: installers/install-network-optimize.sh"
+    echo ""
+
+    echo "4. ${BLUE}Manual Run${NC} (No Installation)"
+    echo "   - Run directly without installation"
+    echo "   - No system changes"
+    echo "   - Portable mode"
+    echo "   Script: ./network-optimize.sh"
+    echo ""
+
+    echo "5. ${RED}Exit${NC}"
+    echo ""
+}
+
+################################################################################
+# Pre-Installation Checks
+################################################################################
+
+check_prerequisites() {
+    echo -e "${BLUE}Checking prerequisites...${NC}"
+
+    local missing=()
+    local warnings=()
+
+    # Required commands
+    command -v bash >/dev/null 2>&1 || missing+=("bash")
+    command -v ip >/dev/null 2>&1 || missing+=("iproute2")
+
+    # Optional but recommended
+    command -v systemctl >/dev/null 2>&1 || warnings+=("systemd")
+    command -v ping >/dev/null 2>&1 || warnings+=("iputils-ping")
+    command -v sysctl >/dev/null 2>&1 || warnings+=("procps")
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo -e "${RED}Error: Missing required packages:${NC} ${missing[*]}"
+        echo ""
+        echo "Install with:"
+        echo "  sudo apt-get install ${missing[*]}"
+        echo "  OR"
+        echo "  sudo dnf install ${missing[*]}"
+        return 1
+    fi
+
+    if [[ ${#warnings[@]} -gt 0 ]]; then
+        echo -e "${YELLOW}Warning: Some optional packages missing:${NC} ${warnings[*]}"
+        echo "Some features may be limited."
+        echo ""
+    fi
+
+    echo -e "${GREEN}✓ All prerequisites satisfied${NC}"
+    echo ""
+    return 0
+}
+
+################################################################################
+# Execute Installer
+################################################################################
+
+run_installer() {
+    local installer_choice="$1"
+    local installer_script=""
+    local installer_args=()
+
+    case "$installer_choice" in
+        1|smart)
+            installer_script="$INSTALLERS_DIR/install-smart.sh"
+            echo -e "${BLUE}Running Smart Installer...${NC}"
+            echo ""
+            ;;
+        2|safe)
+            installer_script="$INSTALLERS_DIR/safe-install.sh"
+            echo -e "${BLUE}Running Safe Installer (remote-safe with 10s delay)...${NC}"
+            echo ""
+            ;;
+        3|legacy)
+            installer_script="$INSTALLERS_DIR/install-network-optimize.sh"
+            echo -e "${BLUE}Running Legacy Installer...${NC}"
+            echo ""
+            ;;
+        4|manual)
+            echo -e "${BLUE}Running manual mode...${NC}"
+            echo ""
+            echo "To run NETOPT manually:"
+            echo "  sudo $SCRIPT_DIR/network-optimize.sh"
+            echo ""
+            echo "To restore default routes:"
+            echo "  sudo $SCRIPT_DIR/network-optimize.sh --restore"
+            echo ""
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Invalid choice${NC}"
+            return 1
+            ;;
+    esac
+
+    # Check if installer exists
+    if [[ ! -f "$installer_script" ]]; then
+        echo -e "${RED}Error: Installer not found: $installer_script${NC}"
+        return 1
+    fi
+
+    # Check if executable
+    if [[ ! -x "$installer_script" ]]; then
+        chmod +x "$installer_script"
+    fi
+
+    # Execute installer
+    exec "$installer_script" "${installer_args[@]}"
+}
+
+################################################################################
+# Main Entry Point
+################################################################################
+
+main() {
+    clear
+    show_banner
+
+    # Detect system configuration
+    detect_system
+
+    # Check prerequisites
+    check_prerequisites || exit 1
+
+    # Get recommendation
+    local recommended=$(recommend_installer)
+
+    # Show menu
+    show_installer_menu
+
+    # Get user choice
+    read -p "Select installation method [1-5]: " -n 1 -r choice
+    echo ""
+    echo ""
+
+    case "$choice" in
+        1|2|3|4)
+            run_installer "$choice"
+            ;;
+        5)
+            echo "Installation cancelled."
+            exit 0
+            ;;
+        "")
+            # Use recommended
+            echo -e "${YELLOW}No selection, using recommended: $recommended${NC}"
+            echo ""
+            run_installer "$recommended"
+            ;;
+        *)
+            echo -e "${RED}Invalid choice. Please run again and select 1-5.${NC}"
+            exit 1
+            ;;
+    esac
+}
+
+# Run if executed directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
